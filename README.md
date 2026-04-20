@@ -15,6 +15,7 @@ Each alias is mapped from `.env` to:
 
 - a real upstream model
 - an optional default `reasoning_effort`
+- an optional visibility flag for `/v1/models`
 
 The proxy:
 
@@ -27,6 +28,7 @@ The proxy:
 - can use a separate upstream API key
 - relays `/v1/models` from upstream with a light in-memory cache
 - merges local aliases into the relayed `/v1/models` list
+- supports hiding specific aliases from `/v1/models` without disabling requests
 
 ---
 
@@ -132,6 +134,7 @@ For each alias:
 
 * `upstream_model`: real model sent upstream
 * `reasoning_effort`: optional default effort to inject
+* `hidden`: optional boolean; when true, alias is not listed in `/v1/models`
 
 ### Allowed `reasoning_effort` values
 
@@ -157,6 +160,18 @@ If the client already sends:
 * or `reasoning: {"effort": ...}`
 
 the proxy preserves it and does not overwrite it.
+
+## Hide aliases from `/v1/models`
+
+You can keep old aliases working while hiding them from discovery.
+
+Example:
+
+```dotenv
+MODEL_ALIASES={"ai-chat-v1":{"upstream_model":"gpt-4.1","hidden":true},"ai-chat":{"upstream_model":"gpt-4.1"}}
+```
+
+This only affects `/v1/models` output. Requests using hidden aliases still work.
 
 ---
 
@@ -322,6 +337,7 @@ Behavior:
 * fetch upstream `/models`
 * cache the JSON payload in memory
 * append local aliases if missing
+* skip aliases marked with `"hidden": true`
 * return merged model list
 
 ### Proxy chat completions
