@@ -57,6 +57,14 @@ def load_model_aliases() -> dict:
                 )
             item["reasoning_effort"] = reasoning_effort.strip()
 
+        hidden = cfg.get("hidden")
+        if hidden is not None:
+            if not isinstance(hidden, bool):
+                raise RuntimeError(
+                    f"MODEL_ALIASES['{alias_name}'].hidden must be a boolean when provided"
+                )
+            item["hidden"] = hidden
+
         normalized[alias_name.strip()] = item
 
     return normalized
@@ -96,7 +104,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="OpenAI-Compatible Alias Proxy",
-    version="1.6.0",
+    version="1.7.1",
     lifespan=lifespan,
 )
 
@@ -234,6 +242,7 @@ def alias_to_model_object(alias_name: str, cfg: dict) -> dict:
             "alias": True,
             "upstream_model": cfg.get("upstream_model"),
             "reasoning_effort": cfg.get("reasoning_effort"),
+            "hidden": cfg.get("hidden", False),
         },
     }
 
@@ -246,19 +255,25 @@ def merge_models_payload(upstream_payload: dict) -> dict:
     if not isinstance(data, list):
         data = []
 
-    merged = list(data)
-    existing_ids = {
-        item.get("id")
-        for item in merged
-        if isinstance(item, dict) and isinstance(item.get("id"), str)
-    }
+    filtered = []
+    existing_ids = set()
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        model_id = item.get("id")
+        if not isinstance(model_id, str):
+            continue
+        filtered.append(item)
+        existing_ids.add(model_id)
 
     for alias_name, cfg in MODEL_ALIASES.items():
+        if cfg.get("hidden") is True:
+            continue
         if alias_name not in existing_ids:
-            merged.append(alias_to_model_object(alias_name, cfg))
+            filtered.append(alias_to_model_object(alias_name, cfg))
 
     upstream_payload["object"] = upstream_payload.get("object", "list")
-    upstream_payload["data"] = merged
+    upstream_payload["data"] = filtered
     return upstream_payload
 
 
