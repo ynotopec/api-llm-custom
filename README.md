@@ -4,25 +4,28 @@ FastAPI proxy for OpenAI-compatible `/v1/*` endpoints.
 
 It lets you expose friendly aliases such as:
 
-- `ai-chat`
+- `ai-multilingual`
 - `ai-tools`
+- `ai-thinking`
 - `ai-vision`
-- `ai-summary`
-- `ai-rag`
-- `ai-translate`
+- `ai-chat`
+- `gpt-4`
 
 Each alias is mapped from `.env` to:
 
 - a real upstream model
 - an optional default `reasoning_effort`
+- optional default request parameters such as temperature/top_p/top_k
 - an optional visibility flag for `/v1/models`
 
 The proxy:
 
 - replaces the alias model name with the real upstream model
 - optionally injects `reasoning_effort` depending on the alias
+- optionally injects alias-specific request parameters only when the client omits them
 - does not overwrite `reasoning_effort` if the client already sent it
 - does not overwrite `reasoning.effort` if the client already sent it
+- does not overwrite alias `parameters` keys if the client already sent them
 - supports normal and streaming responses
 - protects access with a local bearer token
 - can use a separate upstream API key
@@ -43,10 +46,11 @@ The proxy:
 - upstream bearer token support
 - streaming compatible
 - alias-based optional reasoning policy
+- alias-based optional sampling/default parameter policy
 - OpenAI-compatible `/v1/*` proxying
 - `/v1/models` relayed from upstream with light cache
 - local aliases merged into upstream model list
-- aliases configurable from `.env`
+- aliases and default request parameters configurable from `.env`
 - no Ollama-specific dependency in code
 
 ---
@@ -102,7 +106,7 @@ PROXY_API_TOKEN=change-me-long-random-token
 REQUEST_TIMEOUT=600
 REQUIRE_PROXY_AUTH=true
 MODELS_CACHE_TTL=30
-MODEL_ALIASES={"ai-chat":{"upstream_model":"gpt-4.1"},"ai-tools":{"upstream_model":"gpt-4.1","reasoning_effort":"low"},"ai-summary":{"upstream_model":"gpt-4.1","reasoning_effort":"none"}}
+MODEL_ALIASES={"ai-multilingual":{"upstream_model":"qwen3.6","reasoning_effort":"none","parameters":{"temperature":0.7,"top_p":0.80,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}},"ai-tools":{"upstream_model":"qwen3.6","parameters":{"temperature":0.6,"top_p":0.95,"top_k":20,"min_p":0.0,"presence_penalty":0.0,"repetition_penalty":1.0}},"ai-thinking":{"upstream_model":"qwen3.6","parameters":{"temperature":1.0,"top_p":0.95,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}},"ai-vision":{"upstream_model":"qwen3.6","reasoning_effort":"none","parameters":{"temperature":0.7,"top_p":0.80,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}},"ai-chat":{"upstream_model":"qwen3.6","reasoning_effort":"none","hidden":true,"parameters":{"temperature":0.7,"top_p":0.80,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}},"gpt-4":{"upstream_model":"qwen3.6","reasoning_effort":"none","hidden":true,"parameters":{"temperature":0.7,"top_p":0.80,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}}}
 
 # LISTEN_HOST=0.0.0.0
 # LISTEN_PORT=8000
@@ -116,16 +120,16 @@ MODEL_ALIASES={"ai-chat":{"upstream_model":"gpt-4.1"},"ai-tools":{"upstream_mode
 * `REQUEST_TIMEOUT`: upstream timeout in seconds
 * `REQUIRE_PROXY_AUTH`: set to `false` only if you explicitly want no local auth
 * `MODELS_CACHE_TTL`: cache duration in seconds for `/v1/models`
-* `MODEL_ALIASES`: JSON object defining aliases
+* `MODEL_ALIASES`: JSON object defining aliases and optional request defaults
 
 ---
 
 ## MODEL_ALIASES format
 
-Example:
+Example adapted for `qwen3.6` aliases:
 
 ```dotenv
-MODEL_ALIASES={"ai-chat":{"upstream_model":"gpt-4.1"},"ai-tools":{"upstream_model":"gpt-4.1","reasoning_effort":"low"},"ai-summary":{"upstream_model":"gpt-4.1","reasoning_effort":"none"}}
+MODEL_ALIASES={"ai-multilingual":{"upstream_model":"qwen3.6","reasoning_effort":"none","parameters":{"temperature":0.7,"top_p":0.80,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}},"ai-tools":{"upstream_model":"qwen3.6","parameters":{"temperature":0.6,"top_p":0.95,"top_k":20,"min_p":0.0,"presence_penalty":0.0,"repetition_penalty":1.0}},"ai-thinking":{"upstream_model":"qwen3.6","parameters":{"temperature":1.0,"top_p":0.95,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}},"ai-vision":{"upstream_model":"qwen3.6","reasoning_effort":"none","parameters":{"temperature":0.7,"top_p":0.80,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}},"ai-chat":{"upstream_model":"qwen3.6","reasoning_effort":"none","hidden":true,"parameters":{"temperature":0.7,"top_p":0.80,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}},"gpt-4":{"upstream_model":"qwen3.6","reasoning_effort":"none","hidden":true,"parameters":{"temperature":0.7,"top_p":0.80,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}}}
 ```
 
 ### Supported fields
@@ -134,6 +138,7 @@ For each alias:
 
 * `upstream_model`: real model sent upstream
 * `reasoning_effort`: optional default effort to inject
+* `parameters`: optional JSON object of request defaults to inject, such as `temperature`, `top_p`, `top_k`, `min_p`, `presence_penalty`, or `repetition_penalty`
 * `hidden`: optional boolean; when true, alias is not listed in `/v1/models`
 
 ### Allowed `reasoning_effort` values
@@ -145,12 +150,31 @@ For each alias:
 
 ### Default behavior
 
-If `reasoning_effort` is omitted for an alias, the proxy does not inject anything.
+If `reasoning_effort` is omitted for an alias, the proxy does not inject reasoning.
+
+If `parameters` is omitted for an alias, the proxy does not inject extra request parameters.
 
 That means:
 
 * alias model name is still remapped to `upstream_model`
-* but reasoning stays untouched unless the client requested it
+* reasoning stays untouched unless the client requested it or the alias defines `reasoning_effort`
+* sampling/default parameters stay untouched unless the alias defines `parameters`
+
+### Sampling/default parameter presets
+
+Use the `parameters` field to define per-alias defaults. These are applied only when the client omits the same key.
+
+Recommended presets from `.env.example`:
+
+* Thinking mode for general tasks: `temperature=1.0`, `top_p=0.95`, `top_k=20`, `min_p=0.0`, `presence_penalty=1.5`, `repetition_penalty=1.0`
+* Thinking mode for precise coding tasks, such as WebDev: `temperature=0.6`, `top_p=0.95`, `top_k=20`, `min_p=0.0`, `presence_penalty=0.0`, `repetition_penalty=1.0`
+* Instruct or non-thinking mode: `temperature=0.7`, `top_p=0.80`, `top_k=20`, `min_p=0.0`, `presence_penalty=1.5`, `repetition_penalty=1.0`
+
+Example alias:
+
+```dotenv
+MODEL_ALIASES={"ai-thinking":{"upstream_model":"qwen3.6","parameters":{"temperature":1.0,"top_p":0.95,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}}}
+```
 
 ### Client override behavior
 
@@ -158,6 +182,7 @@ If the client already sends:
 
 * `reasoning_effort`
 * or `reasoning: {"effort": ...}`
+* or any key also defined in alias `parameters`
 
 the proxy preserves it and does not overwrite it.
 
@@ -168,7 +193,7 @@ You can keep old aliases working while hiding them from discovery.
 Example:
 
 ```dotenv
-MODEL_ALIASES={"ai-chat-v1":{"upstream_model":"gpt-4.1","hidden":true},"ai-chat":{"upstream_model":"gpt-4.1"}}
+MODEL_ALIASES={"ai-chat":{"upstream_model":"qwen3.6","reasoning_effort":"none","hidden":true},"ai-thinking":{"upstream_model":"qwen3.6"}}
 ```
 
 This only affects `/v1/models` output. Requests using hidden aliases still work.
