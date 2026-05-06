@@ -18,6 +18,9 @@ def env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+RESERVED_ALIAS_PARAMETER_KEYS = {"model", "reasoning", "reasoning_effort"}
+
+
 def load_model_aliases() -> dict:
     raw = os.getenv("MODEL_ALIASES", "").strip()
     if not raw:
@@ -56,6 +59,32 @@ def load_model_aliases() -> dict:
                     f"MODEL_ALIASES['{alias_name}'].reasoning_effort must be a non-empty string when provided"
                 )
             item["reasoning_effort"] = reasoning_effort.strip()
+
+        parameters = cfg.get("parameters")
+        if parameters is not None:
+            if not isinstance(parameters, dict):
+                raise RuntimeError(
+                    f"MODEL_ALIASES['{alias_name}'].parameters must be an object when provided"
+                )
+
+            invalid_keys = {
+                key
+                for key in parameters
+                if not isinstance(key, str) or not key.strip() or key != key.strip()
+            }
+            if invalid_keys:
+                raise RuntimeError(
+                    f"MODEL_ALIASES['{alias_name}'].parameters keys must be non-empty strings"
+                )
+
+            reserved_keys = RESERVED_ALIAS_PARAMETER_KEYS.intersection(parameters)
+            if reserved_keys:
+                keys = ", ".join(sorted(reserved_keys))
+                raise RuntimeError(
+                    f"MODEL_ALIASES['{alias_name}'].parameters cannot define reserved keys: {keys}"
+                )
+
+            item["parameters"] = dict(parameters)
 
         hidden = cfg.get("hidden")
         if hidden is not None:
@@ -150,6 +179,10 @@ def apply_model_policy(payload: dict) -> dict:
     payload = dict(payload)
     payload["model"] = alias_cfg["upstream_model"]
 
+    for key, value in alias_cfg.get("parameters", {}).items():
+        if payload.get(key) is None:
+            payload[key] = value
+
     if payload.get("reasoning_effort") is not None:
         return payload
 
@@ -242,6 +275,7 @@ def alias_to_model_object(alias_name: str, cfg: dict) -> dict:
             "alias": True,
             "upstream_model": cfg.get("upstream_model"),
             "reasoning_effort": cfg.get("reasoning_effort"),
+            "parameters": cfg.get("parameters", {}),
             "hidden": cfg.get("hidden", False),
         },
     }
