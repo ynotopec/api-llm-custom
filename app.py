@@ -258,12 +258,98 @@ def should_stream(request: Request, patched_body: bytes) -> bool:
         return False
 
 
+REASONING_RESPONSE_KEYS = {"reasoning_content", "reasoning_tokens"}
+
+
+def strip_reasoning_fields(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: strip_reasoning_fields(item)
+            for key, item in value.items()
+            if key not in REASONING_RESPONSE_KEYS
+        }
+
+    if isinstance(value, list):
+        return [strip_reasoning_fields(item) for item in value]
+
+    return value
+
+
+def sanitize_chat_completion_payload(payload: Any) -> Any:
+    sanitized = strip_reasoning_fields(payload)
+    if isinstance(sanitized, dict):
+        sanitized.pop("metadata", None)
+    return sanitized
+
+
+def is_empty_reasoning_only_choice(choice: Any) -> bool:
+    if not isinstance(choice, dict):
+        return False
+
+    delta = choice.get("delta")
+    if not isinstance(delta, dict):
+        return False
+
+    return not delta and choice.get("finish_reason") is None
+
+
+def sanitize_stream_event_payload(payload: Any) -> Any | None:
+    sanitized = sanitize_chat_completion_payload(payload)
+    if not isinstance(sanitized, dict):
+        return sanitized
+
+    choices = sanitized.get("choices")
+    if isinstance(choices, list):
+        sanitized["choices"] = [
+            choice for choice in choices if not is_empty_reasoning_only_choice(choice)
+        ]
+        if not sanitized["choices"]:
+            return None
+
+    return sanitized
+
+
 async def stream_bytes(resp: httpx.Response) -> AsyncIterator[bytes]:
     try:
         async for chunk in resp.aiter_bytes():
             yield chunk
     finally:
         await resp.aclose()
+
+
+async def stream_sanitized_sse(resp: httpx.Response) -> AsyncIterator[bytes]:
+    try:
+        async for line in resp.aiter_lines():
+            if not line:
+                continue
+
+            if not line.startswith("data:"):
+                yield f"{line}\n".encode("utf-8")
+                continue
+
+            data = line[5:].lstrip()
+            if data == "[DONE]":
+                yield b"data: [DONE]\n\n"
+                continue
+
+            try:
+                payload = json.loads(data)
+            except json.JSONDecodeError:
+                yield f"{line}\n".encode("utf-8")
+                continue
+
+            sanitized = sanitize_stream_event_payload(payload)
+            if sanitized is None:
+                continue
+
+            body = json.dumps(sanitized, ensure_ascii=False, separators=(",", ":"))
+            yield f"data: {body}\n\n".encode("utf-8")
+    finally:
+        await resp.aclose()
+
+
+def is_chat_completions_path(path: str) -> bool:
+    return path.strip("/") == "chat/completions"
 
 
 def alias_to_model_object(alias_name: str, cfg: dict) -> dict:
@@ -428,9 +514,20 @@ async def proxy_v1(path: str, request: Request):
     response_headers = filter_hop_by_hop_headers(upstream_response.headers)
     media_type = upstream_response.headers.get("content-type")
 
+    sanitize_chat_response = is_chat_completions_path(path)
+    sanitize_stream_response = (
+        sanitize_chat_response and "text/event-stream" in (media_type or "").lower()
+    )
+
     if should_stream(request, outbound_body):
+        if sanitize_stream_response:
+            response_headers.pop("content-encoding", None)
+            response_headers.pop("Content-Encoding", None)
+
         return StreamingResponse(
-            stream_bytes(upstream_response),
+            stream_sanitized_sse(upstream_response)
+            if sanitize_stream_response
+            else stream_bytes(upstream_response),
             status_code=upstream_response.status_code,
             headers=response_headers,
             media_type=media_type,
@@ -438,6 +535,21 @@ async def proxy_v1(path: str, request: Request):
 
     try:
         body = await upstream_response.aread()
+        if sanitize_chat_response and "application/json" in (media_type or "").lower():
+            try:
+                payload = json.loads(body.decode("utf-8"))
+                body = json.dumps(
+                    sanitize_chat_completion_payload(payload),
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+                response_headers.pop("content-type", None)
+                response_headers.pop("Content-Type", None)
+                response_headers.pop("content-encoding", None)
+                response_headers.pop("Content-Encoding", None)
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                pass
+
         return Response(
             content=body,
             status_code=upstream_response.status_code,

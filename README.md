@@ -27,6 +27,7 @@ The proxy:
 - does not overwrite `reasoning.effort` if the client already sent it
 - does not overwrite alias `parameters` keys if the client already sent them
 - supports normal and streaming responses
+- strips reasoning fields from chat completion responses, including streamed SSE chunks
 - protects access with a local bearer token
 - can use a separate upstream API key
 - relays `/v1/models` from upstream with a light in-memory cache
@@ -45,6 +46,7 @@ The proxy:
 - local bearer token protection
 - upstream bearer token support
 - streaming compatible
+- strips `reasoning_content` and `reasoning_tokens` from `/v1/chat/completions` responses
 - alias-based optional reasoning policy
 - alias-based optional sampling/default parameter policy
 - OpenAI-compatible `/v1/*` proxying
@@ -378,6 +380,9 @@ curl http://127.0.0.1:8000/v1/chat/completions \
     ]
   }'
 ```
+
+
+The proxy removes upstream reasoning fields from chat completion responses before returning them to clients. This applies to both `stream: false` JSON responses and `text/event-stream` chunks, so fields such as `reasoning_content` and `reasoning_tokens` are not exposed to OpenAI-compatible clients. Empty streaming choices that only carried reasoning data are dropped.
 
 ### Streaming example
 
