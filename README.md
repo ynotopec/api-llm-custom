@@ -4,6 +4,7 @@ FastAPI proxy for OpenAI-compatible `/v1/*` endpoints.
 
 It lets you expose friendly aliases such as:
 
+- `ai-default`
 - `ai-multilingual`
 - `ai-tools`
 - `ai-thinking`
@@ -106,7 +107,7 @@ PROXY_API_TOKEN=change-me-long-random-token
 REQUEST_TIMEOUT=600
 REQUIRE_PROXY_AUTH=true
 MODELS_CACHE_TTL=30
-MODEL_ALIASES={"ai-multilingual":{"upstream_model":"qwen3.6","reasoning_effort":"none","parameters":{"temperature":0.7,"top_p":0.80,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}},"ai-tools":{"upstream_model":"qwen3.6","parameters":{"temperature":0.6,"top_p":0.95,"top_k":20,"min_p":0.0,"presence_penalty":0.0,"repetition_penalty":1.0}},"ai-thinking":{"upstream_model":"qwen3.6","parameters":{"temperature":1.0,"top_p":0.95,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}},"ai-vision":{"upstream_model":"qwen3.6","reasoning_effort":"none","parameters":{"temperature":0.7,"top_p":0.80,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}},"ai-chat":{"upstream_model":"qwen3.6","reasoning_effort":"none","hidden":true,"parameters":{"temperature":0.7,"top_p":0.80,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}},"gpt-4":{"upstream_model":"qwen3.6","reasoning_effort":"none","hidden":true,"parameters":{"temperature":0.7,"top_p":0.80,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}}}
+MODEL_ALIASES={"ai-default":{"upstream_model":"qwen3.6","reasoning_effort":"none","parameters":{"temperature":0.7,"top_p":0.80,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}},"ai-multilingual":{"upstream_model":"qwen3.6","reasoning_effort":"none","parameters":{"temperature":0.7,"top_p":0.80,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}},"ai-tools":{"upstream_model":"qwen3.6","parameters":{"temperature":0.6,"top_p":0.95,"top_k":20,"min_p":0.0,"presence_penalty":0.0,"repetition_penalty":1.0}},"ai-thinking":{"upstream_model":"qwen3.6","parameters":{"temperature":1.0,"top_p":0.95,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}},"ai-vision":{"upstream_model":"qwen3.6","reasoning_effort":"none","parameters":{"temperature":0.7,"top_p":0.80,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}},"ai-chat":{"upstream_model":"qwen3.6","reasoning_effort":"none","hidden":true,"parameters":{"temperature":0.7,"top_p":0.80,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}},"gpt-4":{"upstream_model":"qwen3.6","reasoning_effort":"none","hidden":true,"parameters":{"temperature":0.7,"top_p":0.80,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}}}
 
 # LISTEN_HOST=0.0.0.0
 # LISTEN_PORT=8000
@@ -129,7 +130,7 @@ MODEL_ALIASES={"ai-multilingual":{"upstream_model":"qwen3.6","reasoning_effort":
 Example adapted for `qwen3.6` aliases:
 
 ```dotenv
-MODEL_ALIASES={"ai-multilingual":{"upstream_model":"qwen3.6","reasoning_effort":"none","parameters":{"temperature":0.7,"top_p":0.80,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}},"ai-tools":{"upstream_model":"qwen3.6","parameters":{"temperature":0.6,"top_p":0.95,"top_k":20,"min_p":0.0,"presence_penalty":0.0,"repetition_penalty":1.0}},"ai-thinking":{"upstream_model":"qwen3.6","parameters":{"temperature":1.0,"top_p":0.95,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}},"ai-vision":{"upstream_model":"qwen3.6","reasoning_effort":"none","parameters":{"temperature":0.7,"top_p":0.80,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}},"ai-chat":{"upstream_model":"qwen3.6","reasoning_effort":"none","hidden":true,"parameters":{"temperature":0.7,"top_p":0.80,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}},"gpt-4":{"upstream_model":"qwen3.6","reasoning_effort":"none","hidden":true,"parameters":{"temperature":0.7,"top_p":0.80,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}}}
+MODEL_ALIASES={"ai-default":{"upstream_model":"qwen3.6","reasoning_effort":"none","parameters":{"temperature":0.7,"top_p":0.80,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}},"ai-multilingual":{"upstream_model":"qwen3.6","reasoning_effort":"none","parameters":{"temperature":0.7,"top_p":0.80,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}},"ai-tools":{"upstream_model":"qwen3.6","parameters":{"temperature":0.6,"top_p":0.95,"top_k":20,"min_p":0.0,"presence_penalty":0.0,"repetition_penalty":1.0}},"ai-thinking":{"upstream_model":"qwen3.6","parameters":{"temperature":1.0,"top_p":0.95,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}},"ai-vision":{"upstream_model":"qwen3.6","reasoning_effort":"none","parameters":{"temperature":0.7,"top_p":0.80,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}},"ai-chat":{"upstream_model":"qwen3.6","reasoning_effort":"none","hidden":true,"parameters":{"temperature":0.7,"top_p":0.80,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}},"gpt-4":{"upstream_model":"qwen3.6","reasoning_effort":"none","hidden":true,"parameters":{"temperature":0.7,"top_p":0.80,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"repetition_penalty":1.0}}}
 ```
 
 ### Supported fields
@@ -164,7 +165,7 @@ That means:
 
 Use the `parameters` field to define per-alias defaults. These are applied only when the client omits the same key.
 
-Recommended presets from `.env.example`:
+Recommended presets from `.env.example` (the `ai-default` alias uses the instruct/non-thinking preset):
 
 * Thinking mode for general tasks: `temperature=1.0`, `top_p=0.95`, `top_k=20`, `min_p=0.0`, `presence_penalty=1.5`, `repetition_penalty=1.0`
 * Thinking mode for precise coding tasks, such as WebDev: `temperature=0.6`, `top_p=0.95`, `top_k=20`, `min_p=0.0`, `presence_penalty=0.0`, `repetition_penalty=1.0`
