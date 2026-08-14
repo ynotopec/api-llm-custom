@@ -109,6 +109,59 @@ REQUIRE_PROXY_AUTH = env_bool("REQUIRE_PROXY_AUTH", True)
 MODELS_CACHE_TTL = int(os.getenv("MODELS_CACHE_TTL", "30"))
 MODEL_ALIASES = load_model_aliases()
 
+
+UPSTREAM_ERROR_STATUS_BY_TYPE = {
+    httpx.ConnectError: 502,
+    httpx.ConnectTimeout: 504,
+    httpx.ReadTimeout: 504,
+    httpx.PoolTimeout: 503,
+}
+
+
+def upstream_error_status(exc: httpx.HTTPError) -> int:
+    for exc_type, status_code in UPSTREAM_ERROR_STATUS_BY_TYPE.items():
+        if isinstance(exc, exc_type):
+            return status_code
+    if isinstance(exc, httpx.TimeoutException):
+        return 504
+    return 502
+
+
+def upstream_error_type(exc: httpx.HTTPError) -> str:
+    if isinstance(exc, httpx.ConnectError):
+        return "upstream_connection_error"
+    if isinstance(exc, httpx.TimeoutException):
+        return "upstream_timeout"
+    if isinstance(exc, httpx.NetworkError):
+        return "upstream_network_error"
+    return "upstream_request_error"
+
+
+def upstream_error_payload(exc: httpx.HTTPError) -> dict:
+    message = (str(exc) or exc.__class__.__name__).strip()
+    return {
+        "error": {
+            "message": f"Unable to reach upstream API at {UPSTREAM_BASE}: {message}",
+            "type": upstream_error_type(exc),
+            "param": None,
+            "code": None,
+        }
+    }
+
+
+def upstream_error_response(exc: httpx.HTTPError) -> JSONResponse:
+    return JSONResponse(
+        status_code=upstream_error_status(exc),
+        content=upstream_error_payload(exc),
+    )
+
+
+def raise_upstream_http_exception(exc: httpx.HTTPError) -> None:
+    raise HTTPException(
+        status_code=upstream_error_status(exc),
+        detail=upstream_error_payload(exc)["error"],
+    ) from exc
+
 app_state: dict[str, Any] = {}
 
 
@@ -262,6 +315,8 @@ async def stream_bytes(resp: httpx.Response) -> AsyncIterator[bytes]:
     try:
         async for chunk in resp.aiter_bytes():
             yield chunk
+    except httpx.HTTPError:
+        return
     finally:
         await resp.aclose()
 
@@ -324,7 +379,11 @@ async def fetch_upstream_models(request: Request) -> dict:
         headers=build_upstream_headers(request),
     )
 
-    upstream_response = await client.send(upstream_request, stream=False)
+    try:
+        upstream_response = await client.send(upstream_request, stream=False)
+    except httpx.HTTPError as exc:
+        raise_upstream_http_exception(exc)
+
     try:
         body = await upstream_response.aread()
         if upstream_response.status_code >= 400:
@@ -338,6 +397,8 @@ async def fetch_upstream_models(request: Request) -> dict:
             payload = {"object": "list", "data": []}
 
         return merge_models_payload(payload)
+    except httpx.HTTPError as exc:
+        raise_upstream_http_exception(exc)
     except json.JSONDecodeError:
         raise HTTPException(status_code=502, detail="Invalid JSON from upstream /models")
     finally:
@@ -384,7 +445,15 @@ async def healthz():
 @app.get("/v1/models", tags=["v1"])
 async def list_models(request: Request):
     authorize_proxy(request)
-    payload = await get_cached_models(request)
+    try:
+        payload = await get_cached_models(request)
+    except HTTPException as exc:
+        if isinstance(exc.detail, dict) and exc.detail.get("type", "").startswith("upstream_"):
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={"error": exc.detail},
+            )
+        raise
     return JSONResponse(content=payload)
 
 
@@ -424,7 +493,11 @@ async def proxy_v1(path: str, request: Request):
         content=outbound_body,
     )
 
-    upstream_response = await client.send(upstream_request, stream=True)
+    try:
+        upstream_response = await client.send(upstream_request, stream=True)
+    except httpx.HTTPError as exc:
+        return upstream_error_response(exc)
+
     response_headers = filter_hop_by_hop_headers(upstream_response.headers)
     media_type = upstream_response.headers.get("content-type")
 
@@ -444,6 +517,8 @@ async def proxy_v1(path: str, request: Request):
             headers=response_headers,
             media_type=media_type,
         )
+    except httpx.HTTPError as exc:
+        return upstream_error_response(exc)
     finally:
         await upstream_response.aclose()
 

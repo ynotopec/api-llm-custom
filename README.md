@@ -437,6 +437,32 @@ WantedBy=multi-user.target
 
 ---
 
+## Upstream connection errors
+
+If the upstream server is down or `UPSTREAM_BASE` points to the wrong host or port, the proxy now returns an OpenAI-style JSON error instead of allowing the raw `httpx.ConnectError` traceback to escape.
+
+Example response:
+
+```json
+{
+  "error": {
+    "message": "Unable to reach upstream API at http://127.0.0.1:9999/v1: All connection attempts failed",
+    "type": "upstream_connection_error",
+    "param": null,
+    "code": null
+  }
+}
+```
+
+Troubleshooting steps:
+
+* Verify `UPSTREAM_BASE` is reachable from the machine running this proxy.
+* Ensure the upstream base URL includes `/v1`.
+* Check that the upstream inference/API service is listening on the expected host and port.
+* Use `/healthz` to confirm which `upstream_base` value the proxy loaded.
+
+---
+
 ## Notes for H100 / DGX Spark
 
 This proxy is CPU-light and model-agnostic.
